@@ -1,0 +1,22 @@
+{
+  "name": "quiniela-mundial",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/vercel": "^10.0.8",
+    "astro": "^6.4.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1",
+    "path-to-regexp": "^6.3.0"
+  }
+}

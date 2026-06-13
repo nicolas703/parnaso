@@ -1,0 +1,656 @@
+---
+import predictionsFile from "../data/predictions.json";
+import { getGroupStageMatches } from "../lib/footballData";
+import {
+  buildLeaderboard,
+  formatMatchDate,
+  formatMatchName,
+  formatPrediction,
+  formatRound,
+  formatScore,
+  getActualScore,
+  verdictLabel
+} from "../lib/quiniela";
+import type { PredictionsFile, Team } from "../lib/types";
+
+export const prerender = false;
+
+const payload = await getGroupStageMatches();
+const predictions = predictionsFile as PredictionsFile;
+const leaderboard = buildLeaderboard(predictions.players, payload.matches);
+const cacheSeconds = Number(import.meta.env.FOOTBALL_DATA_CACHE_SECONDS || 3600);
+const updatedAt = new Intl.DateTimeFormat("es-CL", {
+  day: "2-digit",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit"
+}).format(new Date(payload.fetchedAt));
+
+Astro.response.headers.set(
+  "Cache-Control",
+  `public, s-maxage=${cacheSeconds}, stale-while-revalidate=300`
+);
+
+const previousMatchLabel = leaderboard.previousMatch
+  ? `${formatMatchName(leaderboard.previousMatch)} ${formatScore(getActualScore(leaderboard.previousMatch))}`
+  : "Sin partidos finalizados";
+const nextMatchLabel = leaderboard.nextMatch
+  ? `${formatMatchName(leaderboard.nextMatch)} - ${formatMatchDate(leaderboard.nextMatch)}`
+  : "Sin proximos partidos";
+
+function teamLogo(team: Team) {
+  return team.crest;
+}
+---
+
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="refresh" content={String(cacheSeconds)} />
+    <title>Quiniela Mundial</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f7f2;
+        --surface: #ffffff;
+        --surface-muted: #f0f2ed;
+        --ink: #171914;
+        --muted: #60675b;
+        --line: #dfe4d8;
+        --green: #188452;
+        --green-soft: #e5f6ec;
+        --yellow: #b77a06;
+        --yellow-soft: #fff2ca;
+        --red: #c4382c;
+        --red-soft: #ffe3df;
+        --gray-soft: #ecefeb;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+      }
+
+      img {
+        display: block;
+        max-width: 100%;
+      }
+
+      .shell {
+        width: min(1040px, 100%);
+        margin: 0 auto;
+        padding: 20px;
+      }
+
+      .topbar {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: end;
+        gap: 16px;
+        padding: 12px 0 18px;
+      }
+
+      .eyebrow {
+        margin: 0 0 6px;
+        color: var(--muted);
+        font-size: 0.78rem;
+        font-weight: 800;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 2rem;
+        line-height: 1.05;
+        letter-spacing: 0;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: end;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+
+      .meta span,
+      .context-card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .meta span {
+        padding: 7px 10px;
+      }
+
+      .context {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .context-card {
+        padding: 12px;
+        min-width: 0;
+      }
+
+      .context-card span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.76rem;
+        font-weight: 800;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .context-card strong {
+        display: block;
+        margin-top: 4px;
+        overflow-wrap: anywhere;
+        font-size: 0.98rem;
+      }
+
+      .warning {
+        margin: 0 0 14px;
+        border: 1px solid #e3c15d;
+        border-radius: 8px;
+        background: #fff8dd;
+        color: #775200;
+        padding: 10px 12px;
+        font-size: 0.9rem;
+      }
+
+      .leaderboard {
+        display: grid;
+        gap: 10px;
+      }
+
+      .player-card {
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .player-card[open] {
+        border-color: #c7d0bf;
+      }
+
+      summary {
+        display: grid;
+        grid-template-columns: 34px 34px minmax(120px, 1fr) minmax(146px, 0.8fr) minmax(146px, 0.8fr) 76px;
+        align-items: center;
+        gap: 10px;
+        min-height: 74px;
+        padding: 12px;
+        cursor: pointer;
+        list-style: none;
+      }
+
+      summary::-webkit-details-marker {
+        display: none;
+      }
+
+      summary:focus-visible {
+        outline: 3px solid #6aa7ff;
+        outline-offset: -3px;
+      }
+
+      .eye {
+        position: relative;
+        width: 32px;
+        height: 32px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--ink);
+        background: var(--surface-muted);
+      }
+
+      .eye::before,
+      .eye::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        margin: auto;
+      }
+
+      .eye::before {
+        width: 17px;
+        height: 10px;
+        border: 2px solid currentColor;
+        border-radius: 999px 999px 999px 999px / 720px 720px 720px 720px;
+      }
+
+      .eye::after {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+
+      .player-card[open] .eye {
+        background: var(--ink);
+        color: white;
+      }
+
+      .rank {
+        display: inline-grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: var(--surface-muted);
+        color: var(--muted);
+        font-weight: 800;
+        font-size: 0.9rem;
+      }
+
+      .player-name {
+        min-width: 0;
+        font-size: 1rem;
+        font-weight: 850;
+        overflow-wrap: anywhere;
+      }
+
+      .pill,
+      .points {
+        min-width: 0;
+        border-radius: 8px;
+        padding: 9px 10px;
+      }
+
+      .pill {
+        border: 1px solid var(--line);
+        background: var(--gray-soft);
+      }
+
+      .pill small,
+      .points small,
+      .cell-label,
+      .match-meta {
+        color: var(--muted);
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      .pill strong,
+      .points strong {
+        display: block;
+        margin-top: 3px;
+        overflow-wrap: anywhere;
+        font-size: 0.94rem;
+      }
+
+      .exact {
+        border-color: #8fcba9;
+        background: var(--green-soft);
+        color: var(--green);
+      }
+
+      .winner {
+        border-color: #ecc868;
+        background: var(--yellow-soft);
+        color: var(--yellow);
+      }
+
+      .miss,
+      .missing {
+        border-color: #eca098;
+        background: var(--red-soft);
+        color: var(--red);
+      }
+
+      .pending {
+        border-color: var(--line);
+        background: var(--gray-soft);
+        color: var(--muted);
+      }
+
+      .points {
+        justify-self: end;
+        width: 76px;
+        border: 1px solid #ccd4c5;
+        background: #f4f7f0;
+        text-align: center;
+      }
+
+      .points strong {
+        margin-top: 0;
+        font-size: 1.15rem;
+      }
+
+      .match-list {
+        display: grid;
+        gap: 8px;
+        border-top: 1px solid var(--line);
+        background: #fbfcf8;
+        padding: 10px;
+      }
+
+      .match-row {
+        display: grid;
+        grid-template-columns: minmax(90px, 0.75fr) minmax(180px, 1.5fr) minmax(90px, 0.75fr);
+        gap: 10px;
+        align-items: center;
+        border: 1px solid var(--line);
+        border-left-width: 5px;
+        border-radius: 8px;
+        background: var(--surface);
+        padding: 10px;
+      }
+
+      .match-row.exact {
+        border-left-color: var(--green);
+      }
+
+      .match-row.winner {
+        border-left-color: var(--yellow);
+      }
+
+      .match-row.miss,
+      .match-row.missing {
+        border-left-color: var(--red);
+      }
+
+      .match-row.pending {
+        border-left-color: #9aa395;
+      }
+
+      .score-cell {
+        min-width: 0;
+      }
+
+      .score-cell strong {
+        display: block;
+        margin-top: 4px;
+        font-size: 1.1rem;
+      }
+
+      .result-cell {
+        text-align: right;
+      }
+
+      .match-center {
+        min-width: 0;
+        text-align: center;
+      }
+
+      .teams {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        align-items: center;
+        gap: 8px;
+      }
+
+      .team {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-width: 0;
+      }
+
+      .team.away {
+        justify-content: end;
+      }
+
+      .team-name {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-weight: 800;
+      }
+
+      .crest,
+      .crest-fallback {
+        flex: 0 0 24px;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        border: 1px solid var(--line);
+        background: #eef2ea;
+      }
+
+      .crest {
+        object-fit: contain;
+        padding: 2px;
+      }
+
+      .crest-fallback {
+        display: inline-grid;
+        place-items: center;
+        color: var(--muted);
+        font-size: 0.58rem;
+        font-weight: 850;
+      }
+
+      .versus {
+        color: var(--muted);
+        font-size: 0.75rem;
+        font-weight: 850;
+      }
+
+      .match-meta {
+        display: block;
+        margin-top: 7px;
+        overflow-wrap: anywhere;
+      }
+
+      @media (max-width: 760px) {
+        .shell {
+          padding: 14px;
+        }
+
+        .topbar,
+        .context {
+          grid-template-columns: 1fr;
+        }
+
+        .meta {
+          justify-content: start;
+        }
+
+        h1 {
+          font-size: 1.75rem;
+        }
+
+        summary {
+          grid-template-columns: 32px 32px minmax(0, 1fr) 68px;
+          grid-template-areas:
+            "eye rank name points"
+            ". . previous previous"
+            ". . next next";
+          min-height: 0;
+          align-items: start;
+        }
+
+        .eye {
+          grid-area: eye;
+        }
+
+        .rank {
+          grid-area: rank;
+        }
+
+        .player-name {
+          grid-area: name;
+          padding-top: 5px;
+        }
+
+        .previous-pill {
+          grid-area: previous;
+        }
+
+        .next-pill {
+          grid-area: next;
+        }
+
+        .points {
+          grid-area: points;
+          width: 68px;
+        }
+
+        .match-row {
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+
+        .result-cell {
+          text-align: left;
+        }
+
+        .teams {
+          grid-template-columns: 1fr auto 1fr;
+        }
+
+        .team-name {
+          white-space: normal;
+          overflow: visible;
+          text-overflow: clip;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">{payload.competition.name} {payload.season} - fase de grupos</p>
+          <h1>Quiniela Mundial</h1>
+        </div>
+        <div class="meta" aria-label="Estado de datos">
+          <span>{payload.source === "api" ? "football-data" : "datos de ejemplo"}</span>
+          <span>Actualizado {updatedAt}</span>
+        </div>
+      </header>
+
+      <section class="context" aria-label="Partidos destacados">
+        <div class="context-card">
+          <span>Partido anterior</span>
+          <strong>{previousMatchLabel}</strong>
+        </div>
+        <div class="context-card">
+          <span>Siguiente partido</span>
+          <strong>{nextMatchLabel}</strong>
+        </div>
+      </section>
+
+      {payload.warning && <p class="warning">{payload.warning}</p>}
+
+      <section class="leaderboard" aria-label="Ranking de jugadores">
+        {
+          leaderboard.entries.map((entry, index) => {
+            const previousVerdict = entry.previous?.result.verdict ?? "pending";
+            const nextPrediction = entry.next?.prediction ?? null;
+            const previousPrediction = entry.previous?.prediction ?? null;
+            const previousActual = entry.previous ? getActualScore(entry.previous.match) : null;
+
+            return (
+              <details class="player-card">
+                <summary>
+                  <span class="eye" aria-hidden="true"></span>
+                  <span class="rank">{index + 1}</span>
+                  <span class="player-name">{entry.player.name}</span>
+                  <span class:list={["pill", "previous-pill", previousVerdict]}>
+                    <small>
+                      Anterior {entry.previous ? formatMatchName(entry.previous.match) : ""}
+                    </small>
+                    <strong>
+                      {formatPrediction(previousPrediction)} / {formatScore(previousActual)}
+                    </strong>
+                  </span>
+                  <span class="pill next-pill pending">
+                    <small>Siguiente {entry.next ? formatMatchName(entry.next.match) : ""}</small>
+                    <strong>{formatPrediction(nextPrediction)}</strong>
+                  </span>
+                  <span class="points">
+                    <strong>{entry.points}</strong>
+                    <small>pts</small>
+                  </span>
+                </summary>
+
+                <div class="match-list">
+                  {entry.rows.map((row) => {
+                    const actualScore = getActualScore(row.match);
+                    const homeCrest = teamLogo(row.match.homeTeam);
+                    const awayCrest = teamLogo(row.match.awayTeam);
+
+                    return (
+                      <div class:list={["match-row", row.result.verdict]}>
+                        <div class="score-cell">
+                          <span class="cell-label">Prediccion</span>
+                          <strong>{formatPrediction(row.prediction)}</strong>
+                        </div>
+
+                        <div class="match-center">
+                          <div class="teams">
+                            <span class="team home">
+                              {homeCrest ? (
+                                <img
+                                  class="crest"
+                                  src={homeCrest}
+                                  alt=""
+                                  width="24"
+                                  height="24"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <span class="crest-fallback">{row.match.homeTeam.tla}</span>
+                              )}
+                              <span class="team-name">{row.match.homeTeam.shortName}</span>
+                            </span>
+                            <span class="versus">vs</span>
+                            <span class="team away">
+                              <span class="team-name">{row.match.awayTeam.shortName}</span>
+                              {awayCrest ? (
+                                <img
+                                  class="crest"
+                                  src={awayCrest}
+                                  alt=""
+                                  width="24"
+                                  height="24"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <span class="crest-fallback">{row.match.awayTeam.tla}</span>
+                              )}
+                            </span>
+                          </div>
+                          <span class="match-meta">
+                            {formatRound(row.match)} - {formatMatchDate(row.match)} -{" "}
+                            {verdictLabel(row.result.verdict)}
+                          </span>
+                        </div>
+
+                        <div class="score-cell result-cell">
+                          <span class="cell-label">Resultado</span>
+                          <strong>{formatScore(actualScore)}</strong>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
+            );
+          })
+        }
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+node_modules
+dist
+.astro
+.vercel
+*.log
+page-check.html
+.env
+.env.*
+!.env.example
