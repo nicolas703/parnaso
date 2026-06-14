@@ -1,6 +1,7 @@
 ---
 import { getGroupStageMatches } from "../lib/footballData";
 import { savePlayerPredictions } from "../lib/predictionsStore";
+import { getCountryDisplay } from "../lib/countries";
 import { formatMatchDate, formatMatchName, formatRound } from "../lib/quiniela";
 import type { Match, Prediction } from "../lib/types";
 
@@ -228,7 +229,29 @@ function inputValue(match: Match, side: "home" | "away") {
       }
 
       .score-field label {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
         text-align: center;
+      }
+
+      .country-flag {
+        flex: 0 0 22px;
+        width: 22px;
+        height: 22px;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: #eef2ea;
+        object-fit: contain;
+        padding: 2px;
+      }
+
+      .score-country {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .score-field input {
@@ -294,6 +317,10 @@ function inputValue(match: Match, side: "home" | "away") {
           grid-template-columns: minmax(0, 1fr) 64px 64px;
           gap: 8px;
         }
+
+        .score-country {
+          display: none;
+        }
       }
     </style>
   </head>
@@ -325,42 +352,73 @@ function inputValue(match: Match, side: "home" | "away") {
 
         <section class="matches" aria-label="Predicciones por partido">
           {
-            payload.matches.map((match) => (
-              <div class="match-row">
-                <div>
-                  <span class="match-title">{formatMatchName(match)}</span>
-                  <span class="match-meta">
-                    {formatRound(match)} - {formatMatchDate(match)}
-                  </span>
+            payload.matches.map((match) => {
+              const homeCountry = getCountryDisplay(match.homeTeam);
+              const awayCountry = getCountryDisplay(match.awayTeam);
+
+              return (
+                <div class="match-row">
+                  <div>
+                    <span class="match-title">{formatMatchName(match)}</span>
+                    <span class="match-meta">
+                      {formatRound(match)} - {formatMatchDate(match)}
+                    </span>
+                  </div>
+                  <div class="score-field">
+                    <label for={`home-${match.id}`}>
+                      {homeCountry.flagUrl && (
+                        <img
+                          class="country-flag"
+                          src={homeCountry.flagUrl}
+                          alt=""
+                          width="22"
+                          height="22"
+                          loading="lazy"
+                        />
+                      )}
+                      <span class="score-country">{homeCountry.name}</span>
+                    </label>
+                    <input
+                      id={`home-${match.id}`}
+                      name={`home-${match.id}`}
+                      type="number"
+                      inputmode="numeric"
+                      min="0"
+                      max="99"
+                      value={inputValue(match, "home")}
+                      aria-label={`Marcador de ${homeCountry.name}`}
+                      required
+                    />
+                  </div>
+                  <div class="score-field">
+                    <label for={`away-${match.id}`}>
+                      {awayCountry.flagUrl && (
+                        <img
+                          class="country-flag"
+                          src={awayCountry.flagUrl}
+                          alt=""
+                          width="22"
+                          height="22"
+                          loading="lazy"
+                        />
+                      )}
+                      <span class="score-country">{awayCountry.name}</span>
+                    </label>
+                    <input
+                      id={`away-${match.id}`}
+                      name={`away-${match.id}`}
+                      type="number"
+                      inputmode="numeric"
+                      min="0"
+                      max="99"
+                      value={inputValue(match, "away")}
+                      aria-label={`Marcador de ${awayCountry.name}`}
+                      required
+                    />
+                  </div>
                 </div>
-                <div class="score-field">
-                  <label for={`home-${match.id}`}>{match.homeTeam.tla}</label>
-                  <input
-                    id={`home-${match.id}`}
-                    name={`home-${match.id}`}
-                    type="number"
-                    inputmode="numeric"
-                    min="0"
-                    max="99"
-                    value={inputValue(match, "home")}
-                    required
-                  />
-                </div>
-                <div class="score-field">
-                  <label for={`away-${match.id}`}>{match.awayTeam.tla}</label>
-                  <input
-                    id={`away-${match.id}`}
-                    name={`away-${match.id}`}
-                    type="number"
-                    inputmode="numeric"
-                    min="0"
-                    max="99"
-                    value={inputValue(match, "away")}
-                    required
-                  />
-                </div>
-              </div>
-            ))
+              );
+            })
           }
         </section>
 

@@ -1,6 +1,7 @@
+import { formatCountryName } from "./countries";
 import type { Match, Player, Prediction, ScoreLine } from "./types";
 
-export type Verdict = "exact" | "winner" | "miss" | "pending" | "missing";
+export type Verdict = "exact" | "winner" | "miss" | "pending" | "missing" | "unreported";
 
 export type PredictionResult = {
   verdict: Verdict;
@@ -101,8 +102,18 @@ export function formatScore(score: ScoreLine | null | undefined): string {
   return "Pendiente";
 }
 
+export function formatMatchResult(match: Match): string {
+  const score = getActualScore(match);
+
+  if (score) {
+    return formatScore(score);
+  }
+
+  return isFinished(match) ? "Sin marcador" : "Pendiente";
+}
+
 export function formatMatchName(match: Match): string {
-  return `${match.homeTeam.tla} vs ${match.awayTeam.tla}`;
+  return `${formatCountryName(match.homeTeam)} vs ${formatCountryName(match.awayTeam)}`;
 }
 
 export function formatRound(match: Match): string {
@@ -113,6 +124,7 @@ export function formatRound(match: Match): string {
 
 export function formatMatchDate(match: Match): string {
   return new Intl.DateTimeFormat("es-CL", {
+    timeZone: "America/Santiago",
     weekday: "short",
     day: "2-digit",
     month: "short",
@@ -127,7 +139,8 @@ export function verdictLabel(verdict: Verdict): string {
     winner: "Ganador",
     miss: "Fallido",
     pending: "Pendiente",
-    missing: "Sin prediccion"
+    missing: "Sin prediccion",
+    unreported: "Sin marcador"
   };
 
   return labels[verdict];
@@ -178,7 +191,7 @@ function scorePrediction(prediction: Prediction | null, match: Match): Predictio
 
   if (!actualScore) {
     return {
-      verdict: "pending",
+      verdict: "unreported",
       points: 0
     };
   }

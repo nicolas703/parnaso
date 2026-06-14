@@ -1,6 +1,15 @@
 import { get, put } from "@vercel/blob";
 import { sampleCompetition, sampleMatches } from "./sampleMatches";
-import type { Competition, Match, MatchesPayload, ScoreLine, Team } from "./types";
+import bundledMatchResults from "../data/matchResults.json";
+import type {
+  Competition,
+  Match,
+  MatchesPayload,
+  ScoreLine,
+  StoredMatchResult,
+  StoredMatchResultsFile,
+  Team
+} from "./types";
 
 const API_BASE = "https://api.football-data.org/v4";
 const DEFAULT_SEASON = "2026";
@@ -8,6 +17,9 @@ const DEFAULT_CACHE_SECONDS = 3600;
 const BLOB_CACHE_SECONDS = 60;
 const BLOB_MATCHES_PATHNAME =
   import.meta.env.BLOB_MATCHES_CACHE_PATHNAME || "football-data/wc-group-stage.json";
+const BLOB_MATCH_RESULTS_PATHNAME =
+  import.meta.env.BLOB_MATCH_RESULTS_PATHNAME || "football-data/wc-results.json";
+const FINAL_STATUSES = new Set(["FINISHED", "AWARDED"]);
 
 let cachedPayload: {
   expiresAt: number;
@@ -55,18 +67,30 @@ export async function getGroupStageMatches(): Promise<MatchesPayload> {
   const blobPayload = hasBlobToken() ? await readBlobMatches().catch(() => null) : null;
 
   if (blobPayload && isFresh(blobPayload, cacheSeconds, now)) {
-    cachedPayload = {
-      expiresAt: now + cacheSeconds * 1000,
-      payload: blobPayload
+    const payload = {
+      ...blobPayload,
+      matches: await mergeStoredResults(blobPayload.matches, new Date(now).toISOString(), {
+        learnFromApi: false,
+        writeBack: true
+      })
     };
 
-    return blobPayload;
+    cachedPayload = {
+      expiresAt: now + cacheSeconds * 1000,
+      payload
+    };
+
+    return payload;
   }
 
   if (!apiKey) {
     if (blobPayload) {
       return {
         ...blobPayload,
+        matches: await mergeStoredResults(blobPayload.matches, new Date(now).toISOString(), {
+          learnFromApi: false,
+          writeBack: true
+        }),
         warning: "Falta FOOTBALL_DATA_API_KEY; se muestran los ultimos datos cacheados."
       };
     }
@@ -90,15 +114,20 @@ export async function getGroupStageMatches(): Promise<MatchesPayload> {
     }
 
     const data = (await response.json()) as FootballDataResponse;
-    const matches = (data.matches ?? [])
+    const matchesFromApi = (data.matches ?? [])
       .filter((match) => match.stage === "GROUP_STAGE")
       .map(normalizeMatch)
       .sort((a, b) => new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime());
+    const fetchedAt = new Date(now).toISOString();
+    const matches = await mergeStoredResults(matchesFromApi, fetchedAt, {
+      learnFromApi: true,
+      writeBack: true
+    });
 
     const payload: MatchesPayload = {
       competition: normalizeCompetition(data.competition),
       matches,
-      fetchedAt: new Date(now).toISOString(),
+      fetchedAt,
       season,
       source: "api"
     };
@@ -124,6 +153,10 @@ export async function getGroupStageMatches(): Promise<MatchesPayload> {
     if (blobPayload) {
       return {
         ...blobPayload,
+        matches: await mergeStoredResults(blobPayload.matches, new Date(now).toISOString(), {
+          learnFromApi: false,
+          writeBack: true
+        }),
         warning: "No se pudo actualizar football-data; se mantienen los ultimos datos cacheados."
       };
     }
@@ -149,6 +182,77 @@ async function readBlobMatches(): Promise<MatchesPayload | null> {
 
 async function writeBlobMatches(payload: MatchesPayload) {
   await put(BLOB_MATCHES_PATHNAME, `${JSON.stringify(payload, null, 2)}\n`, {
+    access: "private",
+    allowOverwrite: true,
+    cacheControlMaxAge: BLOB_CACHE_SECONDS,
+    contentType: "application/json",
+    token: getBlobToken()
+  });
+}
+
+async function mergeStoredResults(
+  matches: Match[],
+  updatedAt: string,
+  options: { learnFromApi: boolean; writeBack: boolean }
+): Promise<Match[]> {
+  const storedResults = createStoredResultsLookup();
+  let changed = false;
+
+  if (hasBlobToken()) {
+    const blobResults = await readBlobMatchResults().catch(() => null);
+    addStoredResults(storedResults, blobResults?.results ?? []);
+  }
+
+  changed = seedStoredResults(storedResults, getBundledMatchResults());
+
+  const mergedMatches = matches.map((match) => {
+    const apiScore = options.learnFromApi && FINAL_STATUSES.has(match.status) ? getCompleteScore(match) : null;
+
+    if (apiScore) {
+      const result: StoredMatchResult = {
+        matchId: match.id,
+        matchKey: match.key,
+        homeScore: apiScore.home,
+        awayScore: apiScore.away,
+        status: match.status,
+        updatedAt
+      };
+
+      if (!sameStoredResult(findStoredResult(storedResults, match), result)) {
+        changed = true;
+      }
+
+      addStoredResult(storedResults, result);
+      return match;
+    }
+
+    const storedResult = findStoredResult(storedResults, match);
+    return storedResult ? applyStoredResult(match, storedResult) : match;
+  });
+
+  if (changed && options.writeBack && hasBlobToken()) {
+    await writeBlobMatchResults(buildStoredResultsFile(storedResults, updatedAt)).catch(() => undefined);
+  }
+
+  return mergedMatches;
+}
+
+async function readBlobMatchResults(): Promise<StoredMatchResultsFile | null> {
+  const blob = await get(BLOB_MATCH_RESULTS_PATHNAME, {
+    access: "private",
+    token: getBlobToken(),
+    useCache: false
+  });
+
+  if (!blob?.stream) {
+    return null;
+  }
+
+  return JSON.parse(await new Response(blob.stream).text()) as StoredMatchResultsFile;
+}
+
+async function writeBlobMatchResults(file: StoredMatchResultsFile) {
+  await put(BLOB_MATCH_RESULTS_PATHNAME, `${JSON.stringify(file, null, 2)}\n`, {
     access: "private",
     allowOverwrite: true,
     cacheControlMaxAge: BLOB_CACHE_SECONDS,
@@ -208,6 +312,139 @@ function normalizeScore(score?: ScoreLine): ScoreLine {
     home: typeof score?.home === "number" ? score.home : null,
     away: typeof score?.away === "number" ? score.away : null
   };
+}
+
+function getCompleteScore(match: Match): { home: number; away: number } | null {
+  const fullTime = match.score.fullTime;
+
+  if (typeof fullTime.home === "number" && typeof fullTime.away === "number") {
+    return {
+      home: fullTime.home,
+      away: fullTime.away
+    };
+  }
+
+  const regularTime = match.score.regularTime;
+
+  if (typeof regularTime?.home === "number" && typeof regularTime.away === "number") {
+    return {
+      home: regularTime.home,
+      away: regularTime.away
+    };
+  }
+
+  return null;
+}
+
+function applyStoredResult(match: Match, result: StoredMatchResult): Match {
+  const score = {
+    home: result.homeScore,
+    away: result.awayScore
+  };
+
+  return {
+    ...match,
+    status: result.status ?? "FINISHED",
+    score: {
+      ...match.score,
+      fullTime: score,
+      regularTime: score
+    }
+  };
+}
+
+function getBundledMatchResults(): StoredMatchResult[] {
+  return normalizeStoredResults((bundledMatchResults as StoredMatchResultsFile).results);
+}
+
+function createStoredResultsLookup(): Map<string, StoredMatchResult> {
+  return new Map<string, StoredMatchResult>();
+}
+
+function seedStoredResults(
+  lookup: Map<string, StoredMatchResult>,
+  results: StoredMatchResult[]
+): boolean {
+  let changed = false;
+
+  for (const result of results) {
+    if (!findStoredResultByValue(lookup, result)) {
+      addStoredResult(lookup, result);
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+function addStoredResults(lookup: Map<string, StoredMatchResult>, results: StoredMatchResult[]) {
+  for (const result of normalizeStoredResults(results)) {
+    addStoredResult(lookup, result);
+  }
+}
+
+function addStoredResult(lookup: Map<string, StoredMatchResult>, result: StoredMatchResult) {
+  lookup.set(storedIdKey(result.matchId), result);
+  lookup.set(storedMatchKey(result.matchKey), result);
+}
+
+function findStoredResult(
+  lookup: Map<string, StoredMatchResult>,
+  match: Match
+): StoredMatchResult | undefined {
+  return lookup.get(storedIdKey(match.id)) ?? lookup.get(storedMatchKey(match.key));
+}
+
+function findStoredResultByValue(
+  lookup: Map<string, StoredMatchResult>,
+  result: StoredMatchResult
+): StoredMatchResult | undefined {
+  return lookup.get(storedIdKey(result.matchId)) ?? lookup.get(storedMatchKey(result.matchKey));
+}
+
+function buildStoredResultsFile(
+  lookup: Map<string, StoredMatchResult>,
+  updatedAt: string
+): StoredMatchResultsFile {
+  const uniqueResults = new Map<number, StoredMatchResult>();
+
+  for (const result of lookup.values()) {
+    uniqueResults.set(result.matchId, result);
+  }
+
+  return {
+    updatedAt,
+    results: [...uniqueResults.values()].sort((a, b) => a.matchId - b.matchId)
+  };
+}
+
+function normalizeStoredResults(results: StoredMatchResult[] | undefined): StoredMatchResult[] {
+  return (results ?? []).filter(
+    (result) =>
+      typeof result.matchId === "number" &&
+      typeof result.matchKey === "string" &&
+      Number.isFinite(result.homeScore) &&
+      Number.isFinite(result.awayScore)
+  );
+}
+
+function sameStoredResult(
+  current: StoredMatchResult | undefined,
+  next: StoredMatchResult
+): boolean {
+  return (
+    current?.homeScore === next.homeScore &&
+    current.awayScore === next.awayScore &&
+    current.status === next.status
+  );
+}
+
+function storedIdKey(matchId: number): string {
+  return `id:${matchId}`;
+}
+
+function storedMatchKey(matchKey: string): string {
+  return `key:${matchKey.trim().toUpperCase().replace(/\s+/g, "")}`;
 }
 
 function buildSamplePayload(season: string, warning: string): MatchesPayload {

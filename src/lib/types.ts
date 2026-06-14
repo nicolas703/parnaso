@@ -42,6 +42,20 @@ export type MatchesPayload = {
   warning?: string;
 };
 
+export type StoredMatchResult = {
+  matchId: number;
+  matchKey: string;
+  homeScore: number;
+  awayScore: number;
+  status?: string;
+  updatedAt?: string;
+};
+
+export type StoredMatchResultsFile = {
+  updatedAt?: string;
+  results: StoredMatchResult[];
+};
+
 export type Prediction = {
   matchId?: number;
   matchKey?: string;

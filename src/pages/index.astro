@@ -1,17 +1,16 @@
 ---
 import { getGroupStageMatches } from "../lib/footballData";
 import { readPredictions } from "../lib/predictionsStore";
+import { getCountryDisplay } from "../lib/countries";
 import {
   buildLeaderboard,
   formatMatchDate,
   formatMatchName,
+  formatMatchResult,
   formatPrediction,
   formatRound,
-  formatScore,
-  getActualScore,
   verdictLabel
 } from "../lib/quiniela";
-import type { Team } from "../lib/types";
 
 export const prerender = false;
 
@@ -34,15 +33,12 @@ Astro.response.headers.set(
 );
 
 const previousMatchLabel = leaderboard.previousMatch
-  ? `${formatMatchName(leaderboard.previousMatch)} ${formatScore(getActualScore(leaderboard.previousMatch))}`
+  ? `${formatMatchName(leaderboard.previousMatch)} ${formatMatchResult(leaderboard.previousMatch)}`
   : "Sin partidos finalizados";
 const nextMatchLabel = leaderboard.nextMatch
   ? `${formatMatchName(leaderboard.nextMatch)} - ${formatMatchDate(leaderboard.nextMatch)}`
   : "Sin proximos partidos";
 
-function teamLogo(team: Team) {
-  return team.crest;
-}
 ---
 
 <html lang="es">
@@ -332,6 +328,12 @@ function teamLogo(team: Team) {
         color: var(--muted);
       }
 
+      .unreported {
+        border-color: #b9c1b3;
+        background: #f6f7f3;
+        color: var(--muted);
+      }
+
       .points {
         justify-self: end;
         width: 76px;
@@ -378,7 +380,8 @@ function teamLogo(team: Team) {
         border-left-color: var(--red);
       }
 
-      .match-row.pending {
+      .match-row.pending,
+      .match-row.unreported {
         border-left-color: #9aa395;
       }
 
@@ -427,27 +430,15 @@ function teamLogo(team: Team) {
         font-weight: 800;
       }
 
-      .crest,
-      .crest-fallback {
+      .country-flag {
         flex: 0 0 24px;
         width: 24px;
         height: 24px;
-        border-radius: 50%;
         border: 1px solid var(--line);
+        border-radius: 50%;
         background: #eef2ea;
-      }
-
-      .crest {
         object-fit: contain;
         padding: 2px;
-      }
-
-      .crest-fallback {
-        display: inline-grid;
-        place-items: center;
-        color: var(--muted);
-        font-size: 0.58rem;
-        font-weight: 850;
       }
 
       .versus {
@@ -529,10 +520,28 @@ function teamLogo(team: Team) {
           grid-template-columns: 1fr auto 1fr;
         }
 
+        .team {
+          justify-content: center;
+          flex-wrap: wrap;
+          gap: 5px;
+        }
+
+        .team.away {
+          justify-content: center;
+        }
+
         .team-name {
           white-space: normal;
           overflow: visible;
           text-overflow: clip;
+          text-align: center;
+          line-height: 1.15;
+        }
+
+        .country-flag {
+          flex-basis: 22px;
+          width: 22px;
+          height: 22px;
         }
       }
     </style>
@@ -570,7 +579,7 @@ function teamLogo(team: Team) {
             const previousVerdict = entry.previous?.result.verdict ?? "pending";
             const nextPrediction = entry.next?.prediction ?? null;
             const previousPrediction = entry.previous?.prediction ?? null;
-            const previousActual = entry.previous ? getActualScore(entry.previous.match) : null;
+            const previousResult = entry.previous ? formatMatchResult(entry.previous.match) : "Pendiente";
 
             return (
               <details class="player-card">
@@ -583,7 +592,7 @@ function teamLogo(team: Team) {
                       Anterior {entry.previous ? formatMatchName(entry.previous.match) : ""}
                     </small>
                     <strong>
-                      {formatPrediction(previousPrediction)} / {formatScore(previousActual)}
+                      {formatPrediction(previousPrediction)} / {previousResult}
                     </strong>
                   </span>
                   <span class="pill next-pill pending">
@@ -598,9 +607,8 @@ function teamLogo(team: Team) {
 
                 <div class="match-list">
                   {entry.rows.map((row) => {
-                    const actualScore = getActualScore(row.match);
-                    const homeCrest = teamLogo(row.match.homeTeam);
-                    const awayCrest = teamLogo(row.match.awayTeam);
+                    const homeCountry = getCountryDisplay(row.match.homeTeam);
+                    const awayCountry = getCountryDisplay(row.match.awayTeam);
 
                     return (
                       <div class:list={["match-row", row.result.verdict]}>
@@ -612,34 +620,30 @@ function teamLogo(team: Team) {
                         <div class="match-center">
                           <div class="teams">
                             <span class="team home">
-                              {homeCrest ? (
+                              {homeCountry.flagUrl && (
                                 <img
-                                  class="crest"
-                                  src={homeCrest}
+                                  class="country-flag"
+                                  src={homeCountry.flagUrl}
                                   alt=""
                                   width="24"
                                   height="24"
                                   loading="lazy"
                                 />
-                              ) : (
-                                <span class="crest-fallback">{row.match.homeTeam.tla}</span>
                               )}
-                              <span class="team-name">{row.match.homeTeam.shortName}</span>
+                              <span class="team-name">{homeCountry.name}</span>
                             </span>
                             <span class="versus">vs</span>
                             <span class="team away">
-                              <span class="team-name">{row.match.awayTeam.shortName}</span>
-                              {awayCrest ? (
+                              <span class="team-name">{awayCountry.name}</span>
+                              {awayCountry.flagUrl && (
                                 <img
-                                  class="crest"
-                                  src={awayCrest}
+                                  class="country-flag"
+                                  src={awayCountry.flagUrl}
                                   alt=""
                                   width="24"
                                   height="24"
                                   loading="lazy"
                                 />
-                              ) : (
-                                <span class="crest-fallback">{row.match.awayTeam.tla}</span>
                               )}
                             </span>
                           </div>
@@ -651,7 +655,7 @@ function teamLogo(team: Team) {
 
                         <div class="score-cell result-cell">
                           <span class="cell-label">Resultado</span>
-                          <strong>{formatScore(actualScore)}</strong>
+                          <strong>{formatMatchResult(row.match)}</strong>
                         </div>
                       </div>
                     );
