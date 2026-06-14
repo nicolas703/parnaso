@@ -21,6 +21,7 @@ const leaderboard = buildLeaderboard(predictions.players, payload.matches);
 const cacheSeconds = Number(import.meta.env.FOOTBALL_DATA_CACHE_SECONDS || 3600);
 const hasBlobStorage = Boolean(import.meta.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_READ_WRITE_TOKEN);
 const updatedAt = new Intl.DateTimeFormat("es-CL", {
+  timeZone: "America/Santiago",
   day: "2-digit",
   month: "short",
   hour: "2-digit",
