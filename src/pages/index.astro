@@ -1,6 +1,6 @@
 ---
-import predictionsFile from "../data/predictions.json";
 import { getGroupStageMatches } from "../lib/footballData";
+import { readPredictions } from "../lib/predictionsStore";
 import {
   buildLeaderboard,
   formatMatchDate,
@@ -11,14 +11,15 @@ import {
   getActualScore,
   verdictLabel
 } from "../lib/quiniela";
-import type { PredictionsFile, Team } from "../lib/types";
+import type { Team } from "../lib/types";
 
 export const prerender = false;
 
 const payload = await getGroupStageMatches();
-const predictions = predictionsFile as PredictionsFile;
+const predictions = await readPredictions();
 const leaderboard = buildLeaderboard(predictions.players, payload.matches);
 const cacheSeconds = Number(import.meta.env.FOOTBALL_DATA_CACHE_SECONDS || 3600);
+const hasBlobStorage = Boolean(import.meta.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_READ_WRITE_TOKEN);
 const updatedAt = new Intl.DateTimeFormat("es-CL", {
   day: "2-digit",
   month: "short",
@@ -28,7 +29,7 @@ const updatedAt = new Intl.DateTimeFormat("es-CL", {
 
 Astro.response.headers.set(
   "Cache-Control",
-  `public, s-maxage=${cacheSeconds}, stale-while-revalidate=300`
+  hasBlobStorage ? "no-store" : `public, s-maxage=${cacheSeconds}, stale-while-revalidate=300`
 );
 
 const previousMatchLabel = leaderboard.previousMatch
@@ -126,14 +127,22 @@ function teamLogo(team: Team) {
       }
 
       .meta span,
+      .add-link,
       .context-card {
         border: 1px solid var(--line);
         border-radius: 8px;
         background: var(--surface);
       }
 
-      .meta span {
+      .meta span,
+      .add-link {
         padding: 7px 10px;
+      }
+
+      .add-link {
+        color: var(--ink);
+        font-weight: 800;
+        text-decoration: none;
       }
 
       .context {
@@ -535,6 +544,7 @@ function teamLogo(team: Team) {
           <h1>Quiniela Mundial</h1>
         </div>
         <div class="meta" aria-label="Estado de datos">
+          <a class="add-link" href="/add">Agregar</a>
           <span>{payload.source === "api" ? "football-data" : "datos de ejemplo"}</span>
           <span>Actualizado {updatedAt}</span>
         </div>

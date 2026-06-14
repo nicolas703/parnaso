@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@astrojs/vercel": "^10.0.8",
+    "@vercel/blob": "^2.4.0",
     "astro": "^6.4.6"
   },
   "devDependencies": {
